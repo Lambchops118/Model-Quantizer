@@ -1,0 +1,83 @@
+paths:
+  raw_models_dir: models/raw
+  quantized_models_dir: models/quantized
+  logs_dir: logs
+  metadata_dir: artifacts/metadata
+
+runtime:
+  default_device: auto
+  max_shard_size_mb: 2048
+  prefer_safetensors: true
+  gptq_device_map: auto
+  passthrough_float_dtype: null
+
+models:
+  gemma-2-27b:
+    hf_id: google/gemma-2-27b
+    revision: main
+    torch_dtype: bfloat16
+    trust_remote_code: false
+    auth_token_env: HF_TOKEN
+    enabled: true
+  gemma-2-9b:
+    hf_id: google/gemma-2-9b
+    revision: main
+    torch_dtype: bfloat16
+    trust_remote_code: false
+    auth_token_env: HF_TOKEN
+    enabled: true
+  llama-3-8b:
+    hf_id: meta-llama/Meta-Llama-3-8B
+    revision: main
+    torch_dtype: bfloat16
+    trust_remote_code: false
+    auth_token_env: HF_TOKEN
+    enabled: true
+  mistral-7b:
+    hf_id: mistralai/Mistral-7B-v0.3
+    revision: main
+    torch_dtype: float16
+    trust_remote_code: false
+    auth_token_env: HF_TOKEN
+    enabled: true
+  phi-3:
+    hf_id: microsoft/Phi-3-mini-4k-instruct
+    revision: main
+    torch_dtype: bfloat16
+    trust_remote_code: true
+    auth_token_env: HF_TOKEN
+    enabled: true
+  mixtral-8x7b:
+    hf_id: mistralai/Mixtral-8x7B-v0.1
+    revision: main
+    torch_dtype: bfloat16
+    trust_remote_code: false
+    auth_token_env: HF_TOKEN
+    enabled: false
+
+quantizers:
+  int8_per_tensor:
+    type: int8
+    granularity: per_tensor
+    enabled: true
+  int8_per_channel:
+    type: int8
+    granularity: per_channel
+    channel_axis: 0
+    enabled: true
+  int4_grouped:
+    type: int4
+    group_size: 128
+    enabled: true
+  gptq:
+    type: gptq
+    bits: 4
+    group_size: 128
+    dataset: c4
+    desc_act: false
+    sym: true
+    true_sequential: true
+    tokenizer_model: null
+    batch_size: 1
+    damp_percent: 0.1
+    enabled: true

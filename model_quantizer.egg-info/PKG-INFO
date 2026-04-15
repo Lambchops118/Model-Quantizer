@@ -1,3 +1,19 @@
+Metadata-Version: 2.4
+Name: model-quantizer
+Version: 0.1.0
+Summary: Config-driven tooling for downloading and quantizing LLMs with multiple methods.
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: accelerate>=1.0.0
+Requires-Dist: gptqmodel>=1.0.0
+Requires-Dist: huggingface-hub>=0.24.0
+Requires-Dist: optimum>=1.22.0
+Requires-Dist: PyYAML>=6.0.1
+Requires-Dist: safetensors>=0.4.3
+Requires-Dist: torch>=2.3.0
+Requires-Dist: transformers>=4.57.0
+Requires-Dist: typing_extensions>=4.9.0
+
 # Model-Quantizer
 
 Part 1 of a model quantization system. This project downloads configurable LLMs, applies multiple quantization methods, saves reloadable artifacts, and writes a dedicated logfile for every `(model, quantizer)` run.
