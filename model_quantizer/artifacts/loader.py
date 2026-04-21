@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from typing import Any, Dict, List
@@ -9,6 +10,43 @@ from typing import Any, Dict, List
 import torch
 from safetensors.torch import load_file
 from transformers import AutoConfig, AutoModelForCausalLM
+
+
+def _normalize_remote_config(config) -> None:
+    """Patch known remote-config incompatibilities before model construction."""
+
+    if getattr(config, "model_type", None) != "phi3":
+        return
+
+    rope_scaling = getattr(config, "rope_scaling", None)
+    if not rope_scaling:
+        config.rope_scaling = None
+        return
+
+    if not isinstance(rope_scaling, dict):
+        config.rope_scaling = None
+        return
+
+    normalized = copy.deepcopy(rope_scaling)
+    rope_type = normalized.get("type") or normalized.get("rope_type")
+    if rope_type:
+        normalized["type"] = rope_type
+        normalized["rope_type"] = rope_type
+
+    has_longrope_factors = "short_factor" in normalized and "long_factor" in normalized
+    if rope_type in {None, "", "default"} and not has_longrope_factors:
+        config.rope_scaling = None
+        return
+
+    if not normalized.get("type"):
+        if has_longrope_factors:
+            normalized["type"] = "longrope"
+            normalized["rope_type"] = "longrope"
+        else:
+            config.rope_scaling = None
+            return
+
+    config.rope_scaling = normalized
 
 
 class QuantizedArtifactLoader:
@@ -58,6 +96,7 @@ class QuantizedArtifactLoader:
             artifact_dir,
             trust_remote_code=bool(manifest["source_model"]["trust_remote_code"]),
         )
+        _normalize_remote_config(config)
         model = AutoModelForCausalLM.from_config(
             config,
             trust_remote_code=bool(manifest["source_model"]["trust_remote_code"]),

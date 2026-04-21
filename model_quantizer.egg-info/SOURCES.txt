@@ -19,7 +19,6 @@ model_quantizer/pipeline/runner.py
 model_quantizer/quantization/__init__.py
 model_quantizer/quantization/base.py
 model_quantizer/quantization/common.py
-model_quantizer/quantization/gptq.py
 model_quantizer/quantization/int4.py
 model_quantizer/quantization/int8.py
 model_quantizer/utils/__init__.py

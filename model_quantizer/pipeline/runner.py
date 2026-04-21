@@ -10,7 +10,6 @@ from model_quantizer.artifacts.manager import ArtifactManager, write_artifact_me
 from model_quantizer.configuration import ProjectConfig, QuantizerConfig
 from model_quantizer.download.downloader import ModelDownloader
 from model_quantizer.quantization.base import QuantizationContext, QuantizationResult
-from model_quantizer.quantization.gptq import GPTQQuantizer
 from model_quantizer.quantization.int4 import Int4GroupedQuantizer
 from model_quantizer.quantization.int8 import Int8Quantizer
 from model_quantizer.utils.device import collect_device_info
@@ -58,14 +57,15 @@ class PipelineRunner:
                     model_name,
                     quantizer_name,
                 )
-                downloaded = self.downloader.ensure_downloaded(model_config, logger)
-                logger.info("Preparing run for model=%s quantizer=%s", model_name, quantizer_name)
-                logger.info("Raw model directory: %s", downloaded.local_path)
-                logger.info("Quantized artifact directory: %s", layout.quantized_dir)
-                logger.info("Device info: %s", collect_device_info(selection.device))
-                logger.info("Quantizer options: %s", quantizer_config.options)
 
                 try:
+                    downloaded = self.downloader.ensure_downloaded(model_config, logger)
+                    logger.info("Preparing run for model=%s quantizer=%s", model_name, quantizer_name)
+                    logger.info("Raw model directory: %s", downloaded.local_path)
+                    logger.info("Quantized artifact directory: %s", layout.quantized_dir)
+                    logger.info("Device info: %s", collect_device_info(selection.device))
+                    logger.info("Quantizer options: %s", quantizer_config.options)
+
                     quantizer = build_quantizer(quantizer_config)
                     context = QuantizationContext(
                         model_config=model_config,
@@ -108,7 +108,7 @@ class PipelineRunner:
                         }
                     )
                 except Exception as exc:
-                    logger.exception("Quantization failed: %s", exc)
+                    logger.exception("Run failed: %s", exc)
                     failure_manifest = {
                         "model": model_name,
                         "quantizer": quantizer_name,
@@ -132,7 +132,6 @@ def build_quantizer(definition: QuantizerConfig):
     registry = {
         "int8": Int8Quantizer,
         "int4": Int4GroupedQuantizer,
-        "gptq": GPTQQuantizer,
     }
     try:
         quantizer_cls = registry[definition.type]

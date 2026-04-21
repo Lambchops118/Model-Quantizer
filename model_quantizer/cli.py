@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 from typing import Optional, Sequence
 
@@ -60,9 +61,37 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def load_dotenv(path: Path = Path(".env")) -> None:
+    """Load simple KEY=VALUE pairs from a local .env file.
+
+    Existing environment variables win over values in `.env`.
+    This keeps shell-provided secrets authoritative while allowing
+    project-local configuration for users who cannot export variables.
+    """
+
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or key in os.environ:
+            continue
+
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"\"", "'"}:
+            value = value[1:-1]
+        os.environ[key] = value
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     """CLI entry point."""
 
+    load_dotenv()
     parser = build_parser()
     args = parser.parse_args(argv)
 

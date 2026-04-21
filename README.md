@@ -12,7 +12,6 @@ Evaluation is intentionally not included yet.
   - per-tensor
   - per-channel
 - Manual grouped symmetric `int4` weight-only quantization
-- GPTQ integration via `transformers` + `gptqmodel`
 - Structured outputs under:
   - `models/raw/`
   - `models/quantized/<model>/<method>/`
@@ -48,11 +47,6 @@ Evaluation is intentionally not included yet.
 - Hugging Face access for gated models such as Gemma and Llama
 - Enough host RAM / cloud capacity for the selected checkpoint
 
-Recommended for GPTQ:
-
-- NVIDIA GPU or a capable cloud instance
-- Recent `transformers`, `optimum`, and `gptqmodel`
-
 ## Installation
 
 ```bash
@@ -61,7 +55,21 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-If you are using gated Hugging Face repositories, export a token first:
+If you are using gated Hugging Face repositories, provide a token first.
+
+Option 1: create a local `.env` file in the project root from the example template:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and set:
+
+```bash
+HF_TOKEN=your_token_here
+```
+
+Option 2: export it in your shell:
 
 ```bash
 export HF_TOKEN=your_token_here
@@ -111,7 +119,7 @@ python main.py --all-models --all-quantizers --device auto
 Use a custom config:
 
 ```bash
-python main.py --config config/default.yaml --models llama-3-8b --quantizers gptq
+python main.py --config config/default.yaml --models llama-3-8b --quantizers int4_grouped
 ```
 
 ## Quantization Notes
@@ -148,8 +156,6 @@ For manual quantizers, each artifact directory contains:
   - shard layout
   - size summary
   - runtime info
-
-For GPTQ, the artifact is saved with `save_pretrained()` and can be reloaded directly with Transformers.
 
 ## Reloading Manual Artifacts
 
@@ -193,5 +199,4 @@ Each logfile includes:
 
 - The manual quantizers prioritize clarity and reloadable artifacts over optimized inference kernels.
 - Very large checkpoints can still require substantial RAM even though artifacts are written in shards.
-- GPTQ depends on the local runtime supporting the required backend stack.
 - Evaluation is not implemented yet by design.

@@ -26,7 +26,6 @@ class RuntimeConfig:
     default_device: str = "auto"
     max_shard_size_mb: int = 2048
     prefer_safetensors: bool = True
-    gptq_device_map: str = "auto"
     passthrough_float_dtype: Optional[str] = None
 
 
@@ -114,7 +113,6 @@ def _coerce_runtime(raw: Dict[str, Any]) -> RuntimeConfig:
         default_device=str(raw.get("default_device", "auto")),
         max_shard_size_mb=int(raw.get("max_shard_size_mb", 2048)),
         prefer_safetensors=bool(raw.get("prefer_safetensors", True)),
-        gptq_device_map=str(raw.get("gptq_device_map", "auto")),
         passthrough_float_dtype=raw.get("passthrough_float_dtype"),
     )
 

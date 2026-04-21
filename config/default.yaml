@@ -8,7 +8,6 @@ runtime:
   default_device: auto
   max_shard_size_mb: 2048
   prefer_safetensors: true
-  gptq_device_map: auto
   passthrough_float_dtype: null
 
 models:
@@ -68,16 +67,4 @@ quantizers:
   int4_grouped:
     type: int4
     group_size: 128
-    enabled: true
-  gptq:
-    type: gptq
-    bits: 4
-    group_size: 128
-    dataset: c4
-    desc_act: false
-    sym: true
-    true_sequential: true
-    tokenizer_model: null
-    batch_size: 1
-    damp_percent: 0.1
     enabled: true

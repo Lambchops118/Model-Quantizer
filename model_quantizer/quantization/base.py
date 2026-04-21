@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -72,10 +73,7 @@ class BaseQuantizer(ABC):
     def save_supporting_files(self, context: QuantizationContext) -> None:
         """Save config/tokenizer files next to the quantized artifact."""
 
-        config = AutoConfig.from_pretrained(
-            context.raw_model_dir,
-            trust_remote_code=context.model_config.trust_remote_code,
-        )
+        config = self.load_model_config(context)
         config.save_pretrained(context.output_dir)
 
         try:
@@ -100,10 +98,7 @@ class BaseQuantizer(ABC):
         architecture cheaply even for very large models.
         """
 
-        config = AutoConfig.from_pretrained(
-            context.raw_model_dir,
-            trust_remote_code=context.model_config.trust_remote_code,
-        )
+        config = self.load_model_config(context)
         with init_empty_weights():
             model = AutoModelForCausalLM.from_config(
                 config,
@@ -116,3 +111,77 @@ class BaseQuantizer(ABC):
                 prefix = f"{module_name}." if module_name else ""
                 linear_names.append(f"{prefix}weight")
         return linear_names
+
+    def load_model_config(self, context: QuantizationContext):
+        """Load and normalize a model config before instantiating model code."""
+
+        config = AutoConfig.from_pretrained(
+            context.raw_model_dir,
+            trust_remote_code=context.model_config.trust_remote_code,
+        )
+        self._normalize_remote_config(context, config)
+        return config
+
+    @staticmethod
+    def _normalize_remote_config(context: QuantizationContext, config) -> None:
+        """Patch known remote-config incompatibilities for local model construction.
+
+        Phi-3 checkpoints can move between two rope-scaling conventions:
+        older remote code expects `{"type": "longrope", ...}` while newer
+        `transformers` utilities may expose `{"rope_type": "longrope", ...}`.
+        Keep the config compatible with both conventions so
+        `AutoModelForCausalLM.from_config(...)` can instantiate the module graph
+        on a meta device for tensor discovery.
+        """
+
+        if getattr(config, "model_type", None) != "phi3":
+            return
+
+        rope_scaling = getattr(config, "rope_scaling", None)
+        if not rope_scaling:
+            config.rope_scaling = None
+            context.logger.info(
+                "Normalized Phi-3 config: using rope_scaling=None for local model construction."
+            )
+            return
+
+        if not isinstance(rope_scaling, dict):
+            config.rope_scaling = None
+            context.logger.info(
+                "Normalized Phi-3 config: cleared unsupported rope_scaling=%s.",
+                rope_scaling,
+            )
+            return
+
+        normalized = copy.deepcopy(rope_scaling)
+        rope_type = normalized.get("type") or normalized.get("rope_type")
+        if rope_type:
+            normalized["type"] = rope_type
+            normalized["rope_type"] = rope_type
+
+        has_longrope_factors = "short_factor" in normalized and "long_factor" in normalized
+        if rope_type in {None, "", "default"} and not has_longrope_factors:
+            config.rope_scaling = None
+            context.logger.info(
+                "Normalized Phi-3 config: cleared default rope_scaling=%s.",
+                rope_scaling,
+            )
+            return
+
+        if not normalized.get("type"):
+            if has_longrope_factors:
+                normalized["type"] = "longrope"
+                normalized["rope_type"] = "longrope"
+            else:
+                config.rope_scaling = None
+                context.logger.info(
+                    "Normalized Phi-3 config: cleared incomplete rope_scaling=%s.",
+                    rope_scaling,
+                )
+                return
+
+        config.rope_scaling = normalized
+        context.logger.info(
+            "Normalized Phi-3 config: canonicalized rope_scaling=%s.",
+            normalized,
+        )
