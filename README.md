@@ -16,6 +16,10 @@ This project downloads configurable LLMs, applies multiple quantization methods,
   - `logs/`
   - `artifacts/metadata/`
 - Reload support for the manual quantized artifacts through `QuantizedArtifactLoader`
+- Automated benchmark evaluation for:
+  - HellaSwag multiple-choice accuracy
+  - MMLU multiple-choice accuracy
+  - structured JSON summaries and per-example prediction logs
 - Interactive inference for:
   - stateless `one-shot` prompts
   - remembered-history `conversational` chat
@@ -86,6 +90,7 @@ It defines:
 
 - available models and their Hugging Face ids
 - available quantizers and their parameters
+- available benchmark tasks and dataset sources
 - output directories
 - runtime options such as shard size and default device
 - inference defaults such as:
@@ -109,6 +114,7 @@ List what is available:
 ```bash
 python main.py --list-models
 python main.py --list-quantizers
+python main.py --list-benchmarks
 ```
 
 Run a focused subset:
@@ -147,6 +153,18 @@ Override the injected system prompt for a single session:
 python main.py --run-model phi-3 --artifact-quantizer int4_grouped --system-prompt "Answer like a terse code reviewer."
 ```
 
+Run automated benchmark evaluation for one model and two quantizers:
+
+```bash
+python main.py --run-benchmarks --models phi-3 --quantizers int8_per_channel int4_grouped --benchmarks hellaswag mmlu --device cuda:0
+```
+
+Run a smaller smoke test while developing:
+
+```bash
+python main.py --run-benchmarks --models phi-3 --quantizers int4_grouped --benchmark-limit 25 --device cuda:0
+```
+
 ## Quantization Notes
 
 The manual quantizers are intentionally educational.
@@ -171,6 +189,7 @@ In [model_quantizer/quantization/int4.py](/Users/jacksal1/Desktop/Model%20Quanti
 For manual quantizers, each artifact directory contains:
 
 - tokenizer/config files for the original model family
+- generation/support files needed to reload the model later
 - sharded `safetensors` files containing:
   - quantized weights
   - scales
@@ -204,6 +223,11 @@ state_dict = QuantizedArtifactLoader.load_state_dict(
     Path("models/quantized/mistral-7b/int4_grouped")
 )
 ```
+
+The saved artifacts are intended to be directly reusable for evaluation. Each
+quantized directory stores enough tokenizer/config/supporting metadata for
+`QuantizedArtifactLoader.load_model(...)` to rebuild a standard local
+Transformers model before scoring benchmarks.
 
 ## Interactive Inference
 
@@ -240,6 +264,41 @@ After each response, the runtime prints metrics including:
 - decode throughput
 - peak CUDA memory when running on GPU
 
+## Benchmark Evaluation
+
+Benchmark mode runs deterministic multiple-choice evaluation against local raw
+snapshots and local quantized artifacts. The default config enables:
+
+- `hellaswag` on the validation split
+- `mmlu` on the `all` subject config using the test split
+
+Benchmark mode writes:
+
+- one summary JSON per `(model, variant, benchmark)`
+- one JSONL file with per-example predictions and likelihood scores
+
+Outputs are stored under:
+
+- `artifacts/benchmarks/<model>/<variant>/`
+- `artifacts/datasets/` for cached benchmark datasets
+
+Useful commands:
+
+```bash
+python main.py --run-benchmarks --models phi-3 --quantizers int4_grouped
+python main.py --run-benchmarks --models phi-3 --quantizers int4_grouped --benchmark-limit 50
+python main.py --run-benchmarks --models phi-3 --quantizers int8_per_tensor int8_per_channel int4_grouped --benchmarks hellaswag mmlu
+python main.py --run-benchmarks --models phi-3 --quantizers int4_grouped --no-raw-baseline
+```
+
+Scoring method:
+
+- HellaSwag: average log-likelihood of each candidate ending conditioned on the prompt
+- MMLU: average log-likelihood of answer labels `A/B/C/D` conditioned on the question stem and options
+
+This keeps evaluation reproducible across raw and quantized variants without
+relying on manual prompt inspection.
+
 ## Logging
 
 Every `(model, quantizer)` pair gets its own logfile under `logs/`.
@@ -259,4 +318,4 @@ Each logfile includes:
 
 - The manual quantizers prioritize clarity and reloadable artifacts over optimized inference kernels.
 - Very large checkpoints can still require substantial RAM even though artifacts are written in shards.
-- Evaluation is not implemented yet by design.
+- Quantized benchmark evaluation reconstructs a standard dense model from the saved low-bit artifact before inference, so task-accuracy comparisons are valid but runtime numbers are not equivalent to specialized low-bit kernels such as GPTQ/AWQ runtimes.

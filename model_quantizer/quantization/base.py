@@ -86,6 +86,7 @@ class BaseQuantizer(ABC):
         except Exception as exc:  # pragma: no cover - best effort metadata copy
             context.logger.warning("Tokenizer save skipped: %s", exc)
 
+        self._copy_optional_support_files(context)
         if context.model_config.trust_remote_code:
             self._copy_remote_code_files(context)
 
@@ -198,3 +199,20 @@ class BaseQuantizer(ABC):
             destination_path = context.output_dir / source_path.name
             shutil.copy2(source_path, destination_path)
             context.logger.info("Copied remote-code helper: %s", source_path.name)
+
+    @staticmethod
+    def _copy_optional_support_files(context: QuantizationContext) -> None:
+        """Copy small model-side metadata files needed by some runtimes."""
+
+        for filename in (
+            "generation_config.json",
+            "preprocessor_config.json",
+            "processor_config.json",
+            "chat_template.jinja",
+        ):
+            source_path = context.raw_model_dir / filename
+            if not source_path.exists():
+                continue
+            destination_path = context.output_dir / filename
+            shutil.copy2(source_path, destination_path)
+            context.logger.info("Copied support file: %s", filename)

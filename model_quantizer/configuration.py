@@ -17,6 +17,8 @@ class PathsConfig:
     quantized_models_dir: Path
     logs_dir: Path
     metadata_dir: Path
+    benchmark_results_dir: Path
+    benchmark_cache_dir: Path
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,31 @@ class QuantizerConfig:
 
 
 @dataclass(frozen=True)
+class BenchmarkTaskConfig:
+    """A single benchmark task definition."""
+
+    name: str
+    type: str
+    source: str = "hub"
+    dataset_name: Optional[str] = None
+    dataset_config: Optional[str] = None
+    revision: str = "main"
+    split: str = "validation"
+    local_path: Optional[Path] = None
+    subjects: List[str] = field(default_factory=list)
+    max_examples: Optional[int] = None
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class BenchmarksConfig:
+    """Project-wide benchmark settings."""
+
+    system_prompt: Optional[str] = None
+    tasks: Dict[str, BenchmarkTaskConfig] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class ProjectConfig:
     """The fully parsed project configuration."""
 
@@ -73,6 +100,7 @@ class ProjectConfig:
     paths: PathsConfig
     runtime: RuntimeConfig
     inference: InferenceConfig
+    benchmarks: BenchmarksConfig
     models: Dict[str, ModelConfig]
     quantizers: Dict[str, QuantizerConfig]
 
@@ -108,6 +136,21 @@ class ProjectConfig:
             raise ValueError(f"Unknown quantizer(s): {', '.join(unknown)}")
         return requested_names
 
+    def resolve_benchmark_names(
+        self,
+        requested: Optional[Iterable[str]],
+    ) -> List[str]:
+        """Resolve benchmark selection into validated task names."""
+
+        if not requested:
+            return [name for name, item in self.benchmarks.tasks.items() if item.enabled]
+
+        requested_names = list(dict.fromkeys(requested))
+        unknown = [name for name in requested_names if name not in self.benchmarks.tasks]
+        if unknown:
+            raise ValueError(f"Unknown benchmark(s): {', '.join(unknown)}")
+        return requested_names
+
 
 def _coerce_paths(base_dir: Path, raw: Dict[str, Any]) -> PathsConfig:
     """Build path configuration relative to the config file directory."""
@@ -117,6 +160,12 @@ def _coerce_paths(base_dir: Path, raw: Dict[str, Any]) -> PathsConfig:
         quantized_models_dir=(base_dir / raw["quantized_models_dir"]).resolve(),
         logs_dir=(base_dir / raw["logs_dir"]).resolve(),
         metadata_dir=(base_dir / raw["metadata_dir"]).resolve(),
+        benchmark_results_dir=(
+            base_dir / raw.get("benchmark_results_dir", "artifacts/benchmarks")
+        ).resolve(),
+        benchmark_cache_dir=(
+            base_dir / raw.get("benchmark_cache_dir", "artifacts/datasets")
+        ).resolve(),
     )
 
 
@@ -179,6 +228,34 @@ def _coerce_quantizers(raw: Dict[str, Dict[str, Any]]) -> Dict[str, QuantizerCon
     return quantizers
 
 
+def _coerce_benchmarks(base_dir: Path, raw: Dict[str, Any]) -> BenchmarksConfig:
+    """Build benchmark configuration with defaults."""
+
+    tasks: Dict[str, BenchmarkTaskConfig] = {}
+    for name, item in (raw.get("tasks", {}) or {}).items():
+        local_path = item.get("local_path")
+        tasks[name] = BenchmarkTaskConfig(
+            name=name,
+            type=str(item["type"]),
+            source=str(item.get("source", "hub")),
+            dataset_name=item.get("dataset_name"),
+            dataset_config=item.get("dataset_config"),
+            revision=str(item.get("revision", "main")),
+            split=str(item.get("split", "validation")),
+            local_path=((base_dir / local_path).resolve() if local_path else None),
+            subjects=[str(subject) for subject in item.get("subjects", [])],
+            max_examples=(
+                int(item["max_examples"]) if item.get("max_examples") is not None else None
+            ),
+            enabled=bool(item.get("enabled", True)),
+        )
+
+    return BenchmarksConfig(
+        system_prompt=raw.get("system_prompt"),
+        tasks=tasks,
+    )
+
+
 def load_project_config(path: Path) -> ProjectConfig:
     """Load project configuration from YAML."""
 
@@ -192,6 +269,7 @@ def load_project_config(path: Path) -> ProjectConfig:
         paths=_coerce_paths(base_dir, payload["paths"]),
         runtime=_coerce_runtime(payload.get("runtime", {})),
         inference=_coerce_inference(payload.get("inference", {})),
+        benchmarks=_coerce_benchmarks(base_dir, payload.get("benchmarks", {})),
         models=_coerce_models(payload["models"]),
         quantizers=_coerce_quantizers(payload["quantizers"]),
     )

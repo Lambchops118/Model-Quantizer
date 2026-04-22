@@ -3,6 +3,8 @@ paths:
   quantized_models_dir: models/quantized
   logs_dir: logs
   metadata_dir: artifacts/metadata
+  benchmark_results_dir: artifacts/benchmarks
+  benchmark_cache_dir: artifacts/datasets
 
 runtime:
   default_device: auto
@@ -20,6 +22,25 @@ inference:
   top_p: 0.9
   do_sample: true
   repetition_penalty: 1.05
+
+benchmarks:
+  system_prompt: |
+    You are taking a multiple-choice evaluation.
+    Return the most likely answer based only on the prompt.
+  tasks:
+    hellaswag:
+      type: hellaswag
+      source: hub
+      dataset_name: Rowan/hellaswag
+      split: validation
+      enabled: true
+    mmlu:
+      type: mmlu
+      source: hub
+      dataset_name: cais/mmlu
+      dataset_config: all
+      split: test
+      enabled: true
 
 models:
   gemma-2-27b:

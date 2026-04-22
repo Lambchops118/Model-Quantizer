@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from typing import Optional, Sequence
 
+from model_quantizer.benchmarks import BenchmarkRunner, BenchmarkSelection
 from model_quantizer.configuration import load_project_config
 from model_quantizer.inference.runner import InferenceRequest, InferenceRunner
 from model_quantizer.pipeline.runner import PipelineRunner, PipelineSelection
@@ -60,9 +61,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="List available quantizers and exit.",
     )
     parser.add_argument(
+        "--list-benchmarks",
+        action="store_true",
+        help="List available benchmark tasks and exit.",
+    )
+    parser.add_argument(
         "--run-model",
         default=None,
         help="Load a configured model for inference instead of running quantization.",
+    )
+    parser.add_argument(
+        "--run-benchmarks",
+        action="store_true",
+        help="Run automated benchmark evaluation against local raw and quantized models.",
+    )
+    parser.add_argument(
+        "--benchmarks",
+        nargs="+",
+        default=None,
+        help="Specific benchmark names to run. Defaults to all enabled benchmark tasks.",
+    )
+    parser.add_argument(
+        "--no-raw-baseline",
+        action="store_true",
+        help="Skip raw-model baselines and evaluate only quantized artifacts.",
+    )
+    parser.add_argument(
+        "--benchmark-limit",
+        type=int,
+        default=None,
+        help="Optional cap on the number of examples evaluated per benchmark.",
     )
     parser.add_argument(
         "--model-source",
@@ -168,6 +196,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"{name}: {quantizer.type}")
         return 0
 
+    if args.list_benchmarks:
+        for name, benchmark in config.benchmarks.tasks.items():
+            print(f"{name}: {benchmark.type}")
+        return 0
+
     if args.run_model:
         inference_request = InferenceRequest(
             model_name=args.run_model,
@@ -199,6 +232,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         InferenceRunner(config).run(inference_request)
         return 0
+
+    if args.run_benchmarks:
+        selection = BenchmarkSelection(
+            model_names=config.resolve_model_names(args.models, args.all_models),
+            quantizer_names=config.resolve_quantizer_names(args.quantizers, args.all_quantizers),
+            benchmark_names=config.resolve_benchmark_names(args.benchmarks),
+            device=args.device or config.runtime.default_device,
+            include_raw_baseline=not args.no_raw_baseline,
+            max_examples_per_benchmark=args.benchmark_limit,
+        )
+        runner = BenchmarkRunner(config)
+        results = runner.run(selection)
+
+        success_count = sum(1 for item in results if item["status"] == "success")
+        error_count = len(results) - success_count
+        print(
+            f"Completed {len(results)} benchmark evaluations: "
+            f"{success_count} succeeded, {error_count} failed."
+        )
+        for item in results:
+            print(
+                f"- {item['model_name']} | {item['variant_label']} | {item['benchmark_name']} | "
+                f"{item['status']} | summary={item['summary_path']}"
+            )
+        return 0 if error_count == 0 else 1
 
     selection = PipelineSelection(
         model_names=config.resolve_model_names(args.models, args.all_models),
