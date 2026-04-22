@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional, Sequence
 
 from model_quantizer.configuration import load_project_config
+from model_quantizer.inference.runner import InferenceRequest, InferenceRunner
 from model_quantizer.pipeline.runner import PipelineRunner, PipelineSelection
 
 
@@ -46,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--device",
         default=None,
-        help="Quantization compute device. Examples: auto, cpu, cuda, cuda:0",
+        help="Runtime device. Examples: auto, cpu, cuda, cuda:0",
     )
     parser.add_argument(
         "--list-models",
@@ -57,6 +58,67 @@ def build_parser() -> argparse.ArgumentParser:
         "--list-quantizers",
         action="store_true",
         help="List available quantizers and exit.",
+    )
+    parser.add_argument(
+        "--run-model",
+        default=None,
+        help="Load a configured model for inference instead of running quantization.",
+    )
+    parser.add_argument(
+        "--model-source",
+        choices=("raw", "quantized"),
+        default="raw",
+        help="Inference source for --run-model. Local files only.",
+    )
+    parser.add_argument(
+        "--artifact-quantizer",
+        default=None,
+        help="Quantized artifact name to load when --model-source=quantized.",
+    )
+    parser.add_argument(
+        "--chat-mode",
+        choices=("one-shot", "conversational"),
+        default=None,
+        help="Inference mode. one-shot is stateless; conversational remembers history.",
+    )
+    parser.add_argument(
+        "--prompt",
+        default=None,
+        help="Initial user prompt for one-shot mode.",
+    )
+    parser.add_argument(
+        "--system-prompt",
+        default=None,
+        help="Optional system prompt injected before the first user query.",
+    )
+    parser.add_argument(
+        "--max-new-tokens",
+        type=int,
+        default=None,
+        help="Maximum tokens to generate per response.",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="Sampling temperature for inference.",
+    )
+    parser.add_argument(
+        "--top-p",
+        type=float,
+        default=None,
+        help="Top-p sampling cutoff for inference.",
+    )
+    parser.add_argument(
+        "--repetition-penalty",
+        type=float,
+        default=None,
+        help="Penalty applied to repeated token patterns during inference.",
+    )
+    parser.add_argument(
+        "--no-sample",
+        action="store_true",
+        help="Disable sampling and use greedy decoding.",
     )
     return parser
 
@@ -104,6 +166,38 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.list_quantizers:
         for name, quantizer in config.quantizers.items():
             print(f"{name}: {quantizer.type}")
+        return 0
+
+    if args.run_model:
+        inference_request = InferenceRequest(
+            model_name=args.run_model,
+            source=args.model_source,
+            quantizer_name=args.artifact_quantizer,
+            mode=args.chat_mode or config.inference.default_mode,
+            device=args.device or config.runtime.default_device,
+            prompt=args.prompt,
+            system_prompt=(
+                args.system_prompt
+                if args.system_prompt is not None
+                else config.inference.system_prompt
+            ),
+            max_new_tokens=(
+                args.max_new_tokens
+                if args.max_new_tokens is not None
+                else config.inference.max_new_tokens
+            ),
+            temperature=(
+                args.temperature if args.temperature is not None else config.inference.temperature
+            ),
+            top_p=args.top_p if args.top_p is not None else config.inference.top_p,
+            do_sample=False if args.no_sample else config.inference.do_sample,
+            repetition_penalty=(
+                args.repetition_penalty
+                if args.repetition_penalty is not None
+                else config.inference.repetition_penalty
+            ),
+        )
+        InferenceRunner(config).run(inference_request)
         return 0
 
     selection = PipelineSelection(

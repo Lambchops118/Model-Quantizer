@@ -10,6 +10,17 @@ runtime:
   prefer_safetensors: true
   passthrough_float_dtype: null
 
+inference:
+  default_mode: conversational
+  system_prompt: |
+    You are a concise, helpful assistant.
+    Use the conversation context when it exists, and say when you are uncertain.
+  max_new_tokens: 256
+  temperature: 0.7
+  top_p: 0.9
+  do_sample: true
+  repetition_penalty: 1.05
+
 models:
   gemma-2-27b:
     hf_id: google/gemma-2-27b

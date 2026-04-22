@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import logging
+import shutil
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -84,6 +85,9 @@ class BaseQuantizer(ABC):
             tokenizer.save_pretrained(context.output_dir)
         except Exception as exc:  # pragma: no cover - best effort metadata copy
             context.logger.warning("Tokenizer save skipped: %s", exc)
+
+        if context.model_config.trust_remote_code:
+            self._copy_remote_code_files(context)
 
     def resolve_quantization_device(self, context: QuantizationContext) -> torch.device:
         """Resolve the compute device for tensor-by-tensor quantization math."""
@@ -185,3 +189,12 @@ class BaseQuantizer(ABC):
             "Normalized Phi-3 config: canonicalized rope_scaling=%s.",
             normalized,
         )
+
+    @staticmethod
+    def _copy_remote_code_files(context: QuantizationContext) -> None:
+        """Copy local remote-code Python files into the artifact directory."""
+
+        for source_path in context.raw_model_dir.glob("*.py"):
+            destination_path = context.output_dir / source_path.name
+            shutil.copy2(source_path, destination_path)
+            context.logger.info("Copied remote-code helper: %s", source_path.name)

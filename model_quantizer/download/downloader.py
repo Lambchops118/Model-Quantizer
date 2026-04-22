@@ -50,11 +50,29 @@ class ModelDownloader:
             revision=model_config.revision,
             local_dir=str(local_path),
             token=token,
-            resume_download=True,
             ignore_patterns=["*.onnx", "*.msgpack", "*.h5", "*.tflite"],
         )
         self._validate_snapshot_contents(local_path, model_config)
 
+        return DownloadedModel(
+            name=model_config.name,
+            hf_id=model_config.hf_id,
+            local_path=local_path,
+            revision=model_config.revision,
+        )
+
+    def require_local_snapshot(self, model_config: ModelConfig) -> DownloadedModel:
+        """Return a validated local snapshot without downloading anything."""
+
+        local_path = self.raw_models_dir / model_config.name
+        if not local_path.exists():
+            raise FileNotFoundError(
+                "Local raw model snapshot not found for "
+                f"{model_config.name} at {local_path}. "
+                "Run the quantization/download pipeline first."
+            )
+
+        self._validate_snapshot_contents(local_path, model_config)
         return DownloadedModel(
             name=model_config.name,
             hf_id=model_config.hf_id,

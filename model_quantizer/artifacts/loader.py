@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List
 
 import torch
 from safetensors.torch import load_file
@@ -47,6 +47,61 @@ def _normalize_remote_config(config) -> None:
             return
 
     config.rope_scaling = normalized
+
+
+def load_normalized_model_config(
+    model_dir: Path,
+    trust_remote_code: bool,
+    *,
+    local_files_only: bool = True,
+):
+    """Load a model config and normalize known remote-code quirks."""
+
+    config = AutoConfig.from_pretrained(
+        model_dir,
+        trust_remote_code=trust_remote_code,
+        local_files_only=local_files_only,
+    )
+    _normalize_remote_config(config)
+    return config
+
+
+def _iter_auto_map_module_files(config) -> Iterable[str]:
+    """Yield Python module filenames referenced by a config auto_map."""
+
+    auto_map = getattr(config, "auto_map", None) or {}
+    for value in auto_map.values():
+        if isinstance(value, str):
+            candidates = [value]
+        elif isinstance(value, (list, tuple)):
+            candidates = [item for item in value if isinstance(item, str)]
+        else:
+            continue
+
+        for candidate in candidates:
+            class_ref = candidate.split("--", 1)[-1]
+            module_name = class_ref.split(".", 1)[0].strip()
+            if module_name:
+                yield f"{module_name}.py"
+
+
+def _validate_artifact_model_files(artifact_dir: Path, config) -> None:
+    """Require quantized artifacts to be self-contained for model construction."""
+
+    required_files = set(_iter_auto_map_module_files(config))
+    if not required_files:
+        return
+
+    if all((artifact_dir / filename).exists() for filename in required_files):
+        return
+
+    missing = ", ".join(sorted(required_files))
+    raise RuntimeError(
+        "Quantized artifact is not self-contained. Missing remote-code files: "
+        f"{missing}. Expected them under {artifact_dir}. "
+        "Re-quantize this model with the current code so the artifact contains "
+        "all required support files."
+    )
 
 
 class QuantizedArtifactLoader:
@@ -92,16 +147,38 @@ class QuantizedArtifactLoader:
         """Instantiate and populate a Transformers model from an artifact."""
 
         manifest = cls.load_manifest(artifact_dir)
-        config = AutoConfig.from_pretrained(
+        trust_remote_code = bool(manifest["source_model"]["trust_remote_code"])
+
+        model_config = load_normalized_model_config(
             artifact_dir,
-            trust_remote_code=bool(manifest["source_model"]["trust_remote_code"]),
+            trust_remote_code=trust_remote_code,
         )
-        _normalize_remote_config(config)
+        _validate_artifact_model_files(artifact_dir, model_config)
+        model_kwargs: Dict[str, Any] = {
+            "trust_remote_code": trust_remote_code,
+        }
+        if getattr(model_config, "model_type", None) == "phi3":
+            model_kwargs["attn_implementation"] = "eager"
+
         model = AutoModelForCausalLM.from_config(
-            config,
-            trust_remote_code=bool(manifest["source_model"]["trust_remote_code"]),
+            model_config,
+            **model_kwargs,
         )
-        model.load_state_dict(cls.load_state_dict(artifact_dir))
+        incompatible = model.load_state_dict(cls.load_state_dict(artifact_dir), strict=False)
+        allowed_missing = set()
+        if getattr(model_config, "tie_word_embeddings", False):
+            allowed_missing.add("lm_head.weight")
+
+        unexpected_missing = sorted(set(incompatible.missing_keys) - allowed_missing)
+        if unexpected_missing or incompatible.unexpected_keys:
+            raise RuntimeError(
+                "Artifact state_dict did not match model structure. "
+                f"missing={unexpected_missing} "
+                f"unexpected={sorted(incompatible.unexpected_keys)}"
+            )
+
+        if getattr(model_config, "tie_word_embeddings", False):
+            model.tie_weights()
         return model.to(device)
 
     @staticmethod

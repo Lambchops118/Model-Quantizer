@@ -1,8 +1,6 @@
 # Model-Quantizer
 
-Part 1 of a model quantization system. This project downloads configurable LLMs, applies multiple quantization methods, saves reloadable artifacts, and writes a dedicated logfile for every `(model, quantizer)` run.
-
-Evaluation is intentionally not included yet.
+This project downloads configurable LLMs, applies multiple quantization methods, saves reloadable artifacts, writes a dedicated logfile for every `(model, quantizer)` run, and runs interactive inference against local raw snapshots or local quantized artifacts.
 
 ## Features
 
@@ -18,6 +16,11 @@ Evaluation is intentionally not included yet.
   - `logs/`
   - `artifacts/metadata/`
 - Reload support for the manual quantized artifacts through `QuantizedArtifactLoader`
+- Interactive inference for:
+  - stateless `one-shot` prompts
+  - remembered-history `conversational` chat
+  - local raw snapshots or saved quantized artifacts
+  - latency and throughput metrics such as TTFT and tokens/sec
 
 ## Project Layout
 
@@ -85,6 +88,10 @@ It defines:
 - available quantizers and their parameters
 - output directories
 - runtime options such as shard size and default device
+- inference defaults such as:
+  - the injected system prompt used before the first user query
+  - default chat mode
+  - generation parameters like `max_new_tokens`, `temperature`, and `top_p`
 
 Supported aliases in the default config:
 
@@ -120,6 +127,24 @@ Use a custom config:
 
 ```bash
 python main.py --config config/default.yaml --models llama-3-8b --quantizers int4_grouped
+```
+
+Run one stateless prompt against a local raw model snapshot:
+
+```bash
+python main.py --run-model phi-3 --model-source raw --chat-mode one-shot --prompt "Write a haiku about quantization."
+```
+
+Run conversational chat against a quantized artifact:
+
+```bash
+python main.py --run-model phi-3 --model-source quantized --artifact-quantizer int4_grouped --chat-mode conversational
+```
+
+Override the injected system prompt for a single session:
+
+```bash
+python main.py --run-model phi-3 --artifact-quantizer int4_grouped --system-prompt "Answer like a terse code reviewer."
 ```
 
 ## Quantization Notes
@@ -179,6 +204,41 @@ state_dict = QuantizedArtifactLoader.load_state_dict(
     Path("models/quantized/mistral-7b/int4_grouped")
 )
 ```
+
+## Interactive Inference
+
+The inference runtime loads only local files from:
+
+- `models/raw/<model>/`
+- `models/quantized/<model>/<quantizer>/`
+
+This is intentional: inference never downloads a checkpoint, calls an API, or
+uses a pre-quantized model from Hugging Face at runtime. If a local raw snapshot
+or quantized artifact is missing, the command fails instead of fetching it.
+
+Conversation behavior:
+
+- `one-shot`: one prompt in, one response out, no remembered history
+- `conversational`: a small REPL that remembers previous turns until `/reset` or `/exit`
+
+Useful commands:
+
+```bash
+python main.py --run-model phi-3 --model-source raw --chat-mode conversational
+python main.py --run-model phi-3 --model-source raw --chat-mode one-shot --prompt "Explain grouped int4 quantization."
+python main.py --run-model phi-3 --artifact-quantizer int4_grouped --chat-mode conversational
+python main.py --run-model phi-3 --artifact-quantizer int4_grouped --chat-mode one-shot --prompt "Explain grouped int4 quantization."
+python main.py --run-model phi-3 --artifact-quantizer int8_per_channel
+```
+
+After each response, the runtime prints metrics including:
+
+- prompt token count
+- generated token count
+- time to first token
+- total completion time
+- decode throughput
+- peak CUDA memory when running on GPU
 
 ## Logging
 
