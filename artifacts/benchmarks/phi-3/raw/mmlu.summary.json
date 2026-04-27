@@ -1,16 +1,36 @@
 {
+  "accuracy": 0.253098,
+  "avg_predicted_choice_tokens": 1.0,
+  "avg_prompt_tokens": 165.225,
+  "benchmark_metadata": {
+    "max_examples": null,
+    "source": "hub",
+    "subjects": []
+  },
   "benchmark_name": "mmlu",
   "benchmark_type": "mmlu",
+  "correct_count": 3554,
   "dataset_config": "all",
   "dataset_name": "cais/mmlu",
   "dataset_revision": "main",
-  "error": "CUDA error: unknown error\nSearch for `cudaErrorUnknown' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\nCompile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\n",
+  "evaluation_seconds": 1434.004,
+  "example_count": 14042,
+  "examples_per_second": 9.792,
+  "load_seconds": 129.632,
+  "max_cuda_memory_allocated_gb": 9.181,
+  "max_cuda_memory_reserved_gb": 16.92,
   "model_name": "phi-3",
   "predictions_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\artifacts\\benchmarks\\phi-3\\raw\\mmlu.predictions.jsonl",
   "quantizer_name": null,
   "source": "raw",
+  "source_metrics": {
+    "source_disk_size_bytes": 7644768557,
+    "source_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\models\\raw\\phi-3"
+  },
   "split": "test",
-  "status": "error",
+  "status": "success",
   "summary_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\artifacts\\benchmarks\\phi-3\\raw\\mmlu.summary.json",
+  "system_prompt": "You are taking a multiple-choice evaluation.\nReturn the most likely answer based only on the prompt.\n",
+  "total_forward_passes": 56168,
   "variant_label": "raw"
 }
