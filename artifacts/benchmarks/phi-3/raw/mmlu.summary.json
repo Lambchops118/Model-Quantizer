@@ -1,0 +1,16 @@
+{
+  "benchmark_name": "mmlu",
+  "benchmark_type": "mmlu",
+  "dataset_config": "all",
+  "dataset_name": "cais/mmlu",
+  "dataset_revision": "main",
+  "error": "CUDA error: unknown error\nSearch for `cudaErrorUnknown' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing CUDA_LAUNCH_BLOCKING=1\nCompile with `TORCH_USE_CUDA_DSA` to enable device-side assertions.\n",
+  "model_name": "phi-3",
+  "predictions_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\artifacts\\benchmarks\\phi-3\\raw\\mmlu.predictions.jsonl",
+  "quantizer_name": null,
+  "source": "raw",
+  "split": "test",
+  "status": "error",
+  "summary_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\artifacts\\benchmarks\\phi-3\\raw\\mmlu.summary.json",
+  "variant_label": "raw"
+}

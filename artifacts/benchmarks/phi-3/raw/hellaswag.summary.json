@@ -1,0 +1,36 @@
+{
+  "accuracy": 0.239693,
+  "avg_predicted_choice_tokens": 34.082,
+  "avg_prompt_tokens": 113.039,
+  "benchmark_metadata": {
+    "max_examples": null,
+    "source": "hub",
+    "subjects": []
+  },
+  "benchmark_name": "hellaswag",
+  "benchmark_type": "hellaswag",
+  "correct_count": 2407,
+  "dataset_config": null,
+  "dataset_name": "Rowan/hellaswag",
+  "dataset_revision": "main",
+  "evaluation_seconds": 734.126,
+  "example_count": 10042,
+  "examples_per_second": 13.679,
+  "load_seconds": 127.816,
+  "max_cuda_memory_allocated_gb": 7.462,
+  "max_cuda_memory_reserved_gb": 11.234,
+  "model_name": "phi-3",
+  "predictions_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\artifacts\\benchmarks\\phi-3\\raw\\hellaswag.predictions.jsonl",
+  "quantizer_name": null,
+  "source": "raw",
+  "source_metrics": {
+    "source_disk_size_bytes": 7644768557,
+    "source_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\models\\raw\\phi-3"
+  },
+  "split": "validation",
+  "status": "success",
+  "summary_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\artifacts\\benchmarks\\phi-3\\raw\\hellaswag.summary.json",
+  "system_prompt": "You are taking a multiple-choice evaluation.\nReturn the most likely answer based only on the prompt.\n",
+  "total_forward_passes": 40168,
+  "variant_label": "raw"
+}

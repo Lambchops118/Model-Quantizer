@@ -1,0 +1,40 @@
+{
+  "accuracy": 0.722167,
+  "avg_predicted_choice_tokens": 35.803,
+  "avg_prompt_tokens": 113.039,
+  "benchmark_metadata": {
+    "max_examples": null,
+    "source": "hub",
+    "subjects": []
+  },
+  "benchmark_name": "hellaswag",
+  "benchmark_type": "hellaswag",
+  "correct_count": 7252,
+  "dataset_config": null,
+  "dataset_name": "Rowan/hellaswag",
+  "dataset_revision": "main",
+  "evaluation_seconds": 738.498,
+  "example_count": 10042,
+  "examples_per_second": 13.598,
+  "load_seconds": 385.076,
+  "max_cuda_memory_allocated_gb": 7.462,
+  "max_cuda_memory_reserved_gb": 11.234,
+  "model_name": "phi-3",
+  "predictions_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\artifacts\\benchmarks\\phi-3\\int4_grouped\\hellaswag.predictions.jsonl",
+  "quantizer_name": "int4_grouped",
+  "source": "quantized",
+  "source_metrics": {
+    "artifact_original_size_bytes": 7642159104,
+    "artifact_quantized_size_bytes": 2174914560,
+    "artifact_runtime_seconds": 5.218,
+    "compression_ratio": 3.513774,
+    "source_disk_size_bytes": 2178810029,
+    "source_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\models\\quantized\\phi-3\\int4_grouped"
+  },
+  "split": "validation",
+  "status": "success",
+  "summary_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\artifacts\\benchmarks\\phi-3\\int4_grouped\\hellaswag.summary.json",
+  "system_prompt": "You are taking a multiple-choice evaluation.\nReturn the most likely answer based only on the prompt.\n",
+  "total_forward_passes": 40168,
+  "variant_label": "int4_grouped"
+}

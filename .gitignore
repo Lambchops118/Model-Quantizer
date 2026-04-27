@@ -17,7 +17,7 @@ models/quantized/*
 !models/quantized/.gitkeep
 artifacts/metadata/*
 !artifacts/metadata/.gitkeep
-artifacts/benchmarks/*
+
 artifacts/datasets/*
 logs/*
 !logs/.gitkeep

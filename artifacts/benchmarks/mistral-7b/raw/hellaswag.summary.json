@@ -1,0 +1,36 @@
+{
+  "accuracy": 0.732623,
+  "avg_predicted_choice_tokens": 34.796,
+  "avg_prompt_tokens": 116.143,
+  "benchmark_metadata": {
+    "max_examples": null,
+    "source": "hub",
+    "subjects": []
+  },
+  "benchmark_name": "hellaswag",
+  "benchmark_type": "hellaswag",
+  "correct_count": 7357,
+  "dataset_config": null,
+  "dataset_name": "Rowan/hellaswag",
+  "dataset_revision": "main",
+  "evaluation_seconds": 1384.56,
+  "example_count": 10042,
+  "examples_per_second": 7.253,
+  "load_seconds": 13.733,
+  "max_cuda_memory_allocated_gb": 13.676,
+  "max_cuda_memory_reserved_gb": 15.373,
+  "model_name": "mistral-7b",
+  "predictions_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\artifacts\\benchmarks\\mistral-7b\\raw\\hellaswag.predictions.jsonl",
+  "quantizer_name": null,
+  "source": "raw",
+  "source_metrics": {
+    "source_disk_size_bytes": 28995464744,
+    "source_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\models\\raw\\mistral-7b"
+  },
+  "split": "validation",
+  "status": "success",
+  "summary_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\artifacts\\benchmarks\\mistral-7b\\raw\\hellaswag.summary.json",
+  "system_prompt": "You are taking a multiple-choice evaluation.\nReturn the most likely answer based only on the prompt.\n",
+  "total_forward_passes": 40168,
+  "variant_label": "raw"
+}

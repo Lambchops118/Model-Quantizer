@@ -1,0 +1,16 @@
+{
+  "benchmark_name": "mmlu",
+  "benchmark_type": "mmlu",
+  "dataset_config": "all",
+  "dataset_name": "cais/mmlu",
+  "dataset_revision": "main",
+  "error": "CUDA out of memory. Tried to allocate 56.00 MiB. GPU 0 has a total capacity of 15.92 GiB of which 0 bytes is free. Of the allocated memory 30.11 GiB is allocated by PyTorch, and 31.50 KiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)",
+  "model_name": "gemma-2-9b",
+  "predictions_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\artifacts\\benchmarks\\gemma-2-9b\\int4_grouped\\mmlu.predictions.jsonl",
+  "quantizer_name": "int4_grouped",
+  "source": "quantized",
+  "split": "test",
+  "status": "error",
+  "summary_path": "C:\\Users\\aljac\\Desktop\\Model-Quantizer\\artifacts\\benchmarks\\gemma-2-9b\\int4_grouped\\mmlu.summary.json",
+  "variant_label": "int4_grouped"
+}
