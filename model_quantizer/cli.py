@@ -7,16 +7,16 @@ import os
 from pathlib import Path
 from typing import Optional, Sequence
 
-from model_quantizer.benchmarks import BenchmarkRunner, BenchmarkSelection
+from model_quantizer.artifacts.cleanup import QuantizedArtifactCleaner
 from model_quantizer.configuration import load_project_config
-from model_quantizer.inference.runner import InferenceRequest, InferenceRunner
-from model_quantizer.pipeline.runner import PipelineRunner, PipelineSelection
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Construct the CLI parser."""
 
-    parser = argparse.ArgumentParser(description="Download and quantize configured LLMs.")
+    parser = argparse.ArgumentParser(
+        description="Download, quantize, benchmark, and clean up configured LLM artifacts."
+    )
     parser.add_argument(
         "--config",
         type=Path,
@@ -66,11 +66,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="List available benchmark tasks and exit.",
     )
     parser.add_argument(
-        "--run-model",
-        default=None,
-        help="Load a configured model for inference instead of running quantization.",
-    )
-    parser.add_argument(
         "--run-benchmarks",
         action="store_true",
         help="Run automated benchmark evaluation against local raw and quantized models.",
@@ -93,60 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional cap on the number of examples evaluated per benchmark.",
     )
     parser.add_argument(
-        "--model-source",
-        choices=("raw", "quantized"),
-        default="raw",
-        help="Inference source for --run-model. Local files only.",
-    )
-    parser.add_argument(
-        "--artifact-quantizer",
-        default=None,
-        help="Quantized artifact name to load when --model-source=quantized.",
-    )
-    parser.add_argument(
-        "--chat-mode",
-        choices=("one-shot", "conversational"),
-        default=None,
-        help="Inference mode. one-shot is stateless; conversational remembers history.",
-    )
-    parser.add_argument(
-        "--prompt",
-        default=None,
-        help="Initial user prompt for one-shot mode.",
-    )
-    parser.add_argument(
-        "--system-prompt",
-        default=None,
-        help="Optional system prompt injected before the first user query.",
-    )
-    parser.add_argument(
-        "--max-new-tokens",
-        type=int,
-        default=None,
-        help="Maximum tokens to generate per response.",
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=None,
-        help="Sampling temperature for inference.",
-    )
-    parser.add_argument(
-        "--top-p",
-        type=float,
-        default=None,
-        help="Top-p sampling cutoff for inference.",
-    )
-    parser.add_argument(
-        "--repetition-penalty",
-        type=float,
-        default=None,
-        help="Penalty applied to repeated token patterns during inference.",
-    )
-    parser.add_argument(
-        "--no-sample",
+        "--cleanup-benchmarked-quantized",
         action="store_true",
-        help="Disable sampling and use greedy decoding.",
+        help=(
+            "Remove local quantized artifact directories that already have successful, "
+            "full benchmark summaries for the selected benchmarks."
+        ),
     )
     return parser
 
@@ -201,39 +148,29 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"{name}: {benchmark.type}")
         return 0
 
-    if args.run_model:
-        inference_request = InferenceRequest(
-            model_name=args.run_model,
-            source=args.model_source,
-            quantizer_name=args.artifact_quantizer,
-            mode=args.chat_mode or config.inference.default_mode,
-            device=args.device or config.runtime.default_device,
-            prompt=args.prompt,
-            system_prompt=(
-                args.system_prompt
-                if args.system_prompt is not None
-                else config.inference.system_prompt
-            ),
-            max_new_tokens=(
-                args.max_new_tokens
-                if args.max_new_tokens is not None
-                else config.inference.max_new_tokens
-            ),
-            temperature=(
-                args.temperature if args.temperature is not None else config.inference.temperature
-            ),
-            top_p=args.top_p if args.top_p is not None else config.inference.top_p,
-            do_sample=False if args.no_sample else config.inference.do_sample,
-            repetition_penalty=(
-                args.repetition_penalty
-                if args.repetition_penalty is not None
-                else config.inference.repetition_penalty
-            ),
+    if args.cleanup_benchmarked_quantized:
+        benchmark_names = config.resolve_benchmark_names(args.benchmarks)
+        cleaner = QuantizedArtifactCleaner(
+            quantized_root=config.paths.quantized_models_dir,
+            benchmark_results_root=config.paths.benchmark_results_dir,
         )
-        InferenceRunner(config).run(inference_request)
+        results = cleaner.cleanup_ready_artifacts(benchmark_names)
+        removed_count = sum(1 for item in results if item["status"] == "removed")
+        skipped_count = len(results) - removed_count
+        print(
+            f"Scanned {len(results)} quantized artifacts: "
+            f"{removed_count} removed, {skipped_count} skipped."
+        )
+        for item in results:
+            print(
+                f"- {item['model_name']} | {item['quantizer_name']} | "
+                f"{item['status']} | reason={item['reason']}"
+            )
         return 0
 
     if args.run_benchmarks:
+        from model_quantizer.benchmarks import BenchmarkRunner, BenchmarkSelection
+
         selection = BenchmarkSelection(
             model_names=config.resolve_model_names(args.models, args.all_models),
             quantizer_names=config.resolve_quantizer_names(args.quantizers, args.all_quantizers),
@@ -257,6 +194,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 f"{item['status']} | summary={item['summary_path']}"
             )
         return 0 if error_count == 0 else 1
+
+    from model_quantizer.pipeline.runner import PipelineRunner, PipelineSelection
 
     selection = PipelineSelection(
         model_names=config.resolve_model_names(args.models, args.all_models),

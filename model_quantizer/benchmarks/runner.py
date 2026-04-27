@@ -9,9 +9,15 @@ from typing import Any, Dict, Iterable, List, Optional
 
 import torch
 
+from model_quantizer.artifacts.cleanup import QuantizedArtifactCleaner
 from model_quantizer.artifacts.loader import QuantizedArtifactLoader
 from model_quantizer.configuration import BenchmarkTaskConfig, ProjectConfig
-from model_quantizer.inference.runner import InferenceRequest, InferenceRunner, LoadedModelBundle
+from model_quantizer.runtime import (
+    LoadedModelBundle,
+    LocalModelLoader,
+    ModelLoadRequest,
+    build_prompt_text,
+)
 from model_quantizer.utils.filesystem import ensure_runtime_directories, sanitize_name, write_json, write_jsonl
 
 try:  # pragma: no cover - import guard depends on optional environment state
@@ -65,7 +71,11 @@ class BenchmarkRunner:
 
     def __init__(self, config: ProjectConfig) -> None:
         self.config = config
-        self.inference_runner = InferenceRunner(config)
+        self.model_loader = LocalModelLoader(config)
+        self.artifact_cleaner = QuantizedArtifactCleaner(
+            quantized_root=config.paths.quantized_models_dir,
+            benchmark_results_root=config.paths.benchmark_results_dir,
+        )
 
     def run(self, selection: BenchmarkSelection) -> List[Dict[str, Any]]:
         """Evaluate all selected models, variants, and benchmarks."""
@@ -85,8 +95,9 @@ class BenchmarkRunner:
             for request in variant_requests:
                 variant_label = request.quantizer_name or "raw"
                 bundle: Optional[LoadedModelBundle] = None
+                request_summaries: List[Dict[str, Any]] = []
                 try:
-                    bundle = self.inference_runner.load_model_bundle(request)
+                    bundle = self.model_loader.load(request)
                     source_metrics = self._collect_source_metrics(request, bundle.source_path)
                     for benchmark in benchmarks.values():
                         try:
@@ -106,6 +117,7 @@ class BenchmarkRunner:
                             )
                         self._write_benchmark_outputs(summary)
                         results.append(summary)
+                        request_summaries.append(summary)
                 except Exception as exc:
                     for benchmark in benchmarks.values():
                         summary = self._build_error_summary(
@@ -117,19 +129,25 @@ class BenchmarkRunner:
                         )
                         self._write_benchmark_outputs(summary)
                         results.append(summary)
+                        request_summaries.append(summary)
                 finally:
                     self._release_model(bundle)
+                self._maybe_cleanup_quantized_artifact(
+                    request=request,
+                    selection=selection,
+                    summaries=request_summaries,
+                )
         return results
 
     def _build_variant_requests(
         self,
         model_name: str,
         selection: BenchmarkSelection,
-    ) -> List[InferenceRequest]:
-        requests: List[InferenceRequest] = []
+    ) -> List[ModelLoadRequest]:
+        requests: List[ModelLoadRequest] = []
         if selection.include_raw_baseline:
             requests.append(
-                self._build_inference_request(
+                self._build_variant_request(
                     model_name,
                     source="raw",
                     device=selection.device,
@@ -138,7 +156,7 @@ class BenchmarkRunner:
 
         for quantizer_name in selection.quantizer_names:
             requests.append(
-                self._build_inference_request(
+                self._build_variant_request(
                     model_name,
                     source="quantized",
                     quantizer_name=quantizer_name,
@@ -147,26 +165,18 @@ class BenchmarkRunner:
             )
         return requests
 
-    def _build_inference_request(
+    def _build_variant_request(
         self,
         model_name: str,
         source: str,
         device: str,
         quantizer_name: Optional[str] = None,
-    ) -> InferenceRequest:
-        return InferenceRequest(
+    ) -> ModelLoadRequest:
+        return ModelLoadRequest(
             model_name=model_name,
             source=source,
             quantizer_name=quantizer_name,
-            mode="one-shot",
             device=device,
-            prompt=None,
-            system_prompt=self.config.benchmarks.system_prompt,
-            max_new_tokens=1,
-            temperature=0.0,
-            top_p=1.0,
-            do_sample=False,
-            repetition_penalty=1.0,
         )
 
     def _load_benchmark(
@@ -307,7 +317,7 @@ class BenchmarkRunner:
         self,
         *,
         bundle: LoadedModelBundle,
-        request: InferenceRequest,
+        request: ModelLoadRequest,
         benchmark: LoadedBenchmark,
         source_metrics: Dict[str, Any],
     ) -> Dict[str, Any]:
@@ -331,7 +341,7 @@ class BenchmarkRunner:
             total_examples=total_examples,
         )
         for example_index, example in enumerate(benchmark.examples, start=1):
-            scored = self._score_example(bundle, request, example)
+            scored = self._score_example(bundle, example)
             predictions.append(scored)
             correct += int(scored["is_correct"])
             total_prompt_tokens += int(scored["prompt_tokens"])
@@ -398,15 +408,13 @@ class BenchmarkRunner:
     def _score_example(
         self,
         bundle: LoadedModelBundle,
-        request: InferenceRequest,
         example: BenchmarkExample,
     ) -> Dict[str, Any]:
-        messages = self.inference_runner._compose_messages(  # noqa: SLF001 - internal reuse within package
-            request.system_prompt,
-            [],
+        prompt_text = build_prompt_text(
+            bundle.tokenizer,
+            self.config.benchmarks.system_prompt,
             example.prompt,
         )
-        prompt_text = self.inference_runner._render_prompt(bundle.tokenizer, messages)  # noqa: SLF001
         choice_scores = self._score_choices(bundle, prompt_text, example.choices)
         predicted_index = max(
             range(len(choice_scores)),
@@ -499,7 +507,7 @@ class BenchmarkRunner:
 
     def _collect_source_metrics(
         self,
-        request: InferenceRequest,
+        request: ModelLoadRequest,
         source_path: Path,
     ) -> Dict[str, Any]:
         directory_bytes = self._directory_size_bytes(source_path)
@@ -532,7 +540,7 @@ class BenchmarkRunner:
         *,
         model_name: str,
         variant_label: str,
-        request: InferenceRequest,
+        request: ModelLoadRequest,
         benchmark: LoadedBenchmark,
         error: Exception,
     ) -> Dict[str, Any]:
@@ -568,7 +576,7 @@ class BenchmarkRunner:
     @staticmethod
     def _print_benchmark_start(
         *,
-        request: InferenceRequest,
+        request: ModelLoadRequest,
         benchmark: LoadedBenchmark,
         total_examples: int,
     ) -> None:
@@ -582,7 +590,7 @@ class BenchmarkRunner:
     @staticmethod
     def _print_benchmark_progress(
         *,
-        request: InferenceRequest,
+        request: ModelLoadRequest,
         benchmark: LoadedBenchmark,
         completed: int,
         total: int,
@@ -605,6 +613,40 @@ class BenchmarkRunner:
             f"accuracy={summary['accuracy']:.4f} elapsed={summary['evaluation_seconds']:.1f}s",
             flush=True,
         )
+
+    def _maybe_cleanup_quantized_artifact(
+        self,
+        *,
+        request: ModelLoadRequest,
+        selection: BenchmarkSelection,
+        summaries: List[Dict[str, Any]],
+    ) -> None:
+        if request.source != "quantized" or not request.quantizer_name:
+            return
+        if not self.config.benchmarks.delete_quantized_artifacts_after_success:
+            return
+        if selection.max_examples_per_benchmark is not None:
+            return
+        if not summaries or any(summary["status"] != "success" for summary in summaries):
+            return
+
+        enabled_benchmarks = {
+            name for name, task in self.config.benchmarks.tasks.items() if task.enabled
+        }
+        if set(selection.benchmark_names) != enabled_benchmarks:
+            return
+
+        result = self.artifact_cleaner.cleanup_artifact(
+            model_name=request.model_name,
+            quantizer_name=request.quantizer_name,
+            benchmark_names=selection.benchmark_names,
+        )
+        if result["status"] == "removed":
+            print(
+                f"[cleanup] removed benchmarked artifact model={request.model_name} "
+                f"quantizer={request.quantizer_name} path={result['artifact_dir']}",
+                flush=True,
+            )
 
     def _write_benchmark_outputs(self, summary: Dict[str, Any]) -> None:
         summary_path = Path(summary["summary_path"])

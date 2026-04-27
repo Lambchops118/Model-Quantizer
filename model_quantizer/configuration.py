@@ -32,19 +32,6 @@ class RuntimeConfig:
 
 
 @dataclass(frozen=True)
-class InferenceConfig:
-    """Defaults used by the interactive inference runtime."""
-
-    default_mode: str = "conversational"
-    system_prompt: Optional[str] = None
-    max_new_tokens: int = 256
-    temperature: float = 0.7
-    top_p: float = 0.9
-    do_sample: bool = True
-    repetition_penalty: float = 1.0
-
-
-@dataclass(frozen=True)
 class ModelConfig:
     """A single user-selectable model definition."""
 
@@ -89,6 +76,7 @@ class BenchmarksConfig:
     """Project-wide benchmark settings."""
 
     system_prompt: Optional[str] = None
+    delete_quantized_artifacts_after_success: bool = True
     tasks: Dict[str, BenchmarkTaskConfig] = field(default_factory=dict)
 
 
@@ -99,7 +87,6 @@ class ProjectConfig:
     source_path: Path
     paths: PathsConfig
     runtime: RuntimeConfig
-    inference: InferenceConfig
     benchmarks: BenchmarksConfig
     models: Dict[str, ModelConfig]
     quantizers: Dict[str, QuantizerConfig]
@@ -180,20 +167,6 @@ def _coerce_runtime(raw: Dict[str, Any]) -> RuntimeConfig:
     )
 
 
-def _coerce_inference(raw: Dict[str, Any]) -> InferenceConfig:
-    """Build inference configuration with defaults."""
-
-    return InferenceConfig(
-        default_mode=str(raw.get("default_mode", "conversational")),
-        system_prompt=raw.get("system_prompt"),
-        max_new_tokens=int(raw.get("max_new_tokens", 256)),
-        temperature=float(raw.get("temperature", 0.7)),
-        top_p=float(raw.get("top_p", 0.9)),
-        do_sample=bool(raw.get("do_sample", True)),
-        repetition_penalty=float(raw.get("repetition_penalty", 1.0)),
-    )
-
-
 def _coerce_models(raw: Dict[str, Dict[str, Any]]) -> Dict[str, ModelConfig]:
     """Build typed model definitions."""
 
@@ -252,6 +225,9 @@ def _coerce_benchmarks(base_dir: Path, raw: Dict[str, Any]) -> BenchmarksConfig:
 
     return BenchmarksConfig(
         system_prompt=raw.get("system_prompt"),
+        delete_quantized_artifacts_after_success=bool(
+            raw.get("delete_quantized_artifacts_after_success", True)
+        ),
         tasks=tasks,
     )
 
@@ -268,7 +244,6 @@ def load_project_config(path: Path) -> ProjectConfig:
         source_path=resolved,
         paths=_coerce_paths(base_dir, payload["paths"]),
         runtime=_coerce_runtime(payload.get("runtime", {})),
-        inference=_coerce_inference(payload.get("inference", {})),
         benchmarks=_coerce_benchmarks(base_dir, payload.get("benchmarks", {})),
         models=_coerce_models(payload["models"]),
         quantizers=_coerce_quantizers(payload["quantizers"]),

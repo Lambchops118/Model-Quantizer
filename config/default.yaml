@@ -12,21 +12,11 @@ runtime:
   prefer_safetensors: true
   passthrough_float_dtype: null
 
-inference:
-  default_mode: conversational
-  system_prompt: |
-    You are a concise, helpful assistant.
-    Use the conversation context when it exists, and say when you are uncertain.
-  max_new_tokens: 256
-  temperature: 0.7
-  top_p: 0.9
-  do_sample: true
-  repetition_penalty: 1.05
-
 benchmarks:
   system_prompt: |
     You are taking a multiple-choice evaluation.
     Return the most likely answer based only on the prompt.
+  delete_quantized_artifacts_after_success: true
   tasks:
     hellaswag:
       type: hellaswag

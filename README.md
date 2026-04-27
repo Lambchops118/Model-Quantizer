@@ -1,30 +1,31 @@
 # Model-Quantizer
 
-This project downloads configurable LLMs, applies multiple quantization methods, saves reloadable artifacts, writes a dedicated logfile for every `(model, quantizer)` run, and runs interactive inference against local raw snapshots or local quantized artifacts.
+This project downloads configured Hugging Face causal LMs, applies a set of manual quantization methods, evaluates raw and quantized variants on benchmark tasks, and cleans up quantized artifacts once benchmarking is complete.
+
+The repo is intentionally focused on two workflows:
+
+1. quantize configured models
+2. benchmark them on Hugging Face dataset tasks
+
+Interactive chat and one-off inference are no longer part of the project.
 
 ## Features
 
 - Config-driven model registry using Hugging Face identifiers
-- Modular pipeline with separate downloader, quantizers, artifact writer, and runner
-- Manual symmetric `int8` weight-only quantization
-  - per-tensor
-  - per-channel
-- Manual grouped symmetric `int4` weight-only quantization
-- Structured outputs under:
-  - `models/raw/`
-  - `models/quantized/<model>/<method>/`
-  - `logs/`
-  - `artifacts/metadata/`
-- Reload support for the manual quantized artifacts through `QuantizedArtifactLoader`
-- Automated benchmark evaluation for:
-  - HellaSwag multiple-choice accuracy
-  - MMLU multiple-choice accuracy
-  - structured JSON summaries and per-example prediction logs
-- Interactive inference for:
-  - stateless `one-shot` prompts
-  - remembered-history `conversational` chat
-  - local raw snapshots or saved quantized artifacts
-  - latency and throughput metrics such as TTFT and tokens/sec
+- Manual weight-only quantization methods:
+  - symmetric `int8` per-tensor
+  - symmetric `int8` per-channel
+  - symmetric grouped `int4`
+- Sharded `safetensors` artifact writing for large checkpoints
+- Reload support for saved quantized artifacts during evaluation
+- Automated benchmark evaluation for Hugging Face dataset tasks:
+  - HellaSwag
+  - MMLU
+- Structured JSON summaries and per-example prediction logs
+- Per-run logfiles for every `(model, quantizer)` pair
+- Automatic deletion of quantized artifacts after a successful full benchmark pass
+- Standalone cleanup command for already-benchmarked quantized artifacts
+- Docker setup for GPU-backed batch runs on Vast.ai
 
 ## Project Layout
 
@@ -32,17 +33,22 @@ This project downloads configurable LLMs, applies multiple quantization methods,
 .
 ├── config/
 │   └── default.yaml
+├── docker/
+│   └── run_pipeline_and_benchmarks.sh
 ├── main.py
 ├── model_quantizer/
 │   ├── artifacts/
+│   ├── benchmarks/
 │   ├── download/
 │   ├── pipeline/
 │   ├── quantization/
-│   └── utils/
+│   └── runtime/
 ├── models/
 │   ├── raw/
 │   └── quantized/
 ├── artifacts/
+│   ├── benchmarks/
+│   ├── datasets/
 │   └── metadata/
 └── logs/
 ```
@@ -51,8 +57,8 @@ This project downloads configurable LLMs, applies multiple quantization methods,
 
 - Python 3.10+
 - PyTorch-compatible environment
+- Enough disk and RAM for the selected checkpoints
 - Hugging Face access for gated models such as Gemma and Llama
-- Enough host RAM / cloud capacity for the selected checkpoint
 
 ## Installation
 
@@ -62,54 +68,39 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-If you are using gated Hugging Face repositories, provide a token first.
-
-Option 1: create a local `.env` file in the project root from the example template:
-
-```bash
-cp .env.example .env
-```
-
-Then edit `.env` and set:
-
-```bash
-HF_TOKEN=your_token_here
-```
-
-Option 2: export it in your shell:
+If you are using gated Hugging Face repositories, set a token:
 
 ```bash
 export HF_TOKEN=your_token_here
 ```
 
+You can also place `HF_TOKEN=...` in a local `.env` file in the repo root.
+
 ## Configuration
 
-The default configuration lives at [config/default.yaml](/Users/jacksal1/Desktop/Model%20Quantizer/Model-Quantizer/config/default.yaml).
+The default configuration lives in [config/default.yaml](/mnt/c/Users/aljac/Desktop/Model-Quantizer/config/default.yaml:1).
 
 It defines:
 
-- available models and their Hugging Face ids
-- available quantizers and their parameters
-- available benchmark tasks and dataset sources
 - output directories
-- runtime options such as shard size and default device
-- inference defaults such as:
-  - the injected system prompt used before the first user query
-  - default chat mode
-  - generation parameters like `max_new_tokens`, `temperature`, and `top_p`
+- runtime defaults such as shard size and device selection
+- benchmark tasks and dataset sources
+- whether successful full benchmark runs should delete quantized artifacts
+- model aliases and Hugging Face ids
+- quantizer methods and their parameters
 
-Supported aliases in the default config:
+Default model aliases:
 
 - `gemma-2-27b`
 - `gemma-2-9b`
 - `llama-3-8b`
 - `mistral-7b`
 - `phi-3`
-- `mixtral-8x7b` (disabled by default)
+- `mixtral-8x7b` disabled by default
 
 ## Usage
 
-List what is available:
+List configured options:
 
 ```bash
 python main.py --list-models
@@ -117,205 +108,121 @@ python main.py --list-quantizers
 python main.py --list-benchmarks
 ```
 
-Run a focused subset:
+Run quantization for a focused subset:
 
 ```bash
 python main.py --models mistral-7b phi-3 --quantizers int8_per_tensor int4_grouped --device cuda:0
 ```
 
-Run every enabled combination from the config:
+Run quantization for every enabled combination:
 
 ```bash
 python main.py --all-models --all-quantizers --device auto
 ```
 
-Use a custom config:
-
-```bash
-python main.py --config config/default.yaml --models llama-3-8b --quantizers int4_grouped
-```
-
-Run one stateless prompt against a local raw model snapshot:
-
-```bash
-python main.py --run-model phi-3 --model-source raw --chat-mode one-shot --prompt "Write a haiku about quantization."
-```
-
-Run conversational chat against a quantized artifact:
-
-```bash
-python main.py --run-model phi-3 --model-source quantized --artifact-quantizer int4_grouped --chat-mode conversational
-```
-
-Override the injected system prompt for a single session:
-
-```bash
-python main.py --run-model phi-3 --artifact-quantizer int4_grouped --system-prompt "Answer like a terse code reviewer."
-```
-
-Run automated benchmark evaluation for one model and two quantizers:
+Run benchmarks for one model across two quantizers:
 
 ```bash
 python main.py --run-benchmarks --models phi-3 --quantizers int8_per_channel int4_grouped --benchmarks hellaswag mmlu --device cuda:0
 ```
 
-Run a smaller smoke test while developing:
+Run a smaller benchmark smoke test:
 
 ```bash
 python main.py --run-benchmarks --models phi-3 --quantizers int4_grouped --benchmark-limit 25 --device cuda:0
 ```
 
-## Quantization Notes
-
-The manual quantizers are intentionally educational.
-
-In [model_quantizer/quantization/int8.py](/Users/jacksal1/Desktop/Model%20Quantizer/Model-Quantizer/model_quantizer/quantization/int8.py), the code shows:
-
-- how symmetric scaling is computed from the largest absolute value
-- why zero stays exact in symmetric quantization
-- how rounding and clipping map floats into signed `int8`
-- how per-tensor and per-channel scaling differ
-- how scales are stored for later reconstruction
-
-In [model_quantizer/quantization/int4.py](/Users/jacksal1/Desktop/Model%20Quantizer/Model-Quantizer/model_quantizer/quantization/int4.py), the code shows:
-
-- how grouped quantization reduces error versus one global scale
-- how each group gets its own symmetric scale
-- how signed `int4` values are packed two-per-byte
-- how packed storage is later unpacked and dequantized
-
-## Output Format
-
-For manual quantizers, each artifact directory contains:
-
-- tokenizer/config files for the original model family
-- generation/support files needed to reload the model later
-- sharded `safetensors` files containing:
-  - quantized weights
-  - scales
-  - passthrough non-quantized tensors
-- `quantization_manifest.json` with:
-  - quantization parameters
-  - tensor-level metadata
-  - shard layout
-  - size summary
-  - runtime info
-
-## Reloading Manual Artifacts
-
-```python
-from pathlib import Path
-
-from model_quantizer.artifacts.loader import QuantizedArtifactLoader
-
-artifact_dir = Path("models/quantized/mistral-7b/int8_per_channel")
-model = QuantizedArtifactLoader.load_model(artifact_dir, device="cpu")
-```
-
-If you only need the reconstructed weights:
-
-```python
-from pathlib import Path
-
-from model_quantizer.artifacts.loader import QuantizedArtifactLoader
-
-state_dict = QuantizedArtifactLoader.load_state_dict(
-    Path("models/quantized/mistral-7b/int4_grouped")
-)
-```
-
-The saved artifacts are intended to be directly reusable for evaluation. Each
-quantized directory stores enough tokenizer/config/supporting metadata for
-`QuantizedArtifactLoader.load_model(...)` to rebuild a standard local
-Transformers model before scoring benchmarks.
-
-## Interactive Inference
-
-The inference runtime loads only local files from:
-
-- `models/raw/<model>/`
-- `models/quantized/<model>/<quantizer>/`
-
-This is intentional: inference never downloads a checkpoint, calls an API, or
-uses a pre-quantized model from Hugging Face at runtime. If a local raw snapshot
-or quantized artifact is missing, the command fails instead of fetching it.
-
-Conversation behavior:
-
-- `one-shot`: one prompt in, one response out, no remembered history
-- `conversational`: a small REPL that remembers previous turns until `/reset` or `/exit`
-
-Useful commands:
+Remove local quantized artifacts that already have successful full benchmark summaries:
 
 ```bash
-python main.py --run-model phi-3 --model-source raw --chat-mode conversational
-python main.py --run-model phi-3 --model-source raw --chat-mode one-shot --prompt "Explain grouped int4 quantization."
-python main.py --run-model phi-3 --artifact-quantizer int4_grouped --chat-mode conversational
-python main.py --run-model phi-3 --artifact-quantizer int4_grouped --chat-mode one-shot --prompt "Explain grouped int4 quantization."
-python main.py --run-model phi-3 --artifact-quantizer int8_per_channel
+python main.py --cleanup-benchmarked-quantized
 ```
 
-After each response, the runtime prints metrics including:
+## Benchmark Behavior
 
-- prompt token count
-- generated token count
-- time to first token
-- total completion time
-- decode throughput
-- peak CUDA memory when running on GPU
+Benchmark mode evaluates local raw snapshots and local quantized artifacts. The default config uses Hugging Face datasets for:
 
-## Benchmark Evaluation
-
-Benchmark mode runs deterministic multiple-choice evaluation against local raw
-snapshots and local quantized artifacts. The default config enables:
-
-- `hellaswag` on the validation split
-- `mmlu` on the `all` subject config using the test split
-
-Benchmark mode writes:
-
-- one summary JSON per `(model, variant, benchmark)`
-- one JSONL file with per-example predictions and likelihood scores
-
-Outputs are stored under:
-
-- `artifacts/benchmarks/<model>/<variant>/`
-- `artifacts/datasets/` for cached benchmark datasets
-
-Useful commands:
-
-```bash
-python main.py --run-benchmarks --models phi-3 --quantizers int4_grouped
-python main.py --run-benchmarks --models phi-3 --quantizers int4_grouped --benchmark-limit 50
-python main.py --run-benchmarks --models phi-3 --quantizers int8_per_tensor int8_per_channel int4_grouped --benchmarks hellaswag mmlu
-python main.py --run-benchmarks --models phi-3 --quantizers int4_grouped --no-raw-baseline
-```
+- `hellaswag` validation
+- `mmlu` test with `dataset_config: all`
 
 Scoring method:
 
-- HellaSwag: average log-likelihood of each candidate ending conditioned on the prompt
-- MMLU: average log-likelihood of answer labels `A/B/C/D` conditioned on the question stem and options
+- HellaSwag: normalized log-likelihood of each ending continuation
+- MMLU: normalized log-likelihood of answer labels `A/B/C/D`
 
-This keeps evaluation reproducible across raw and quantized variants without
-relying on manual prompt inspection.
+Outputs are written under:
 
-## Logging
+- `artifacts/benchmarks/<model>/<variant>/`
+- `artifacts/datasets/` for dataset cache
 
-Every `(model, quantizer)` pair gets its own logfile under `logs/`.
+Each benchmark run writes:
 
-Each logfile includes:
+- one summary JSON per `(model, variant, benchmark)`
+- one JSONL file with per-example predictions
 
-- timestamps
-- model and method names
-- device information
-- quantization parameters
-- progress checkpoints
-- size information
-- warnings/errors
-- total runtime
+## Quantized Artifact Cleanup
 
-## Limitations
+The default config enables automatic cleanup after benchmarking.
 
-- The manual quantizers prioritize clarity and reloadable artifacts over optimized inference kernels.
-- Very large checkpoints can still require substantial RAM even though artifacts are written in shards.
-- Quantized benchmark evaluation reconstructs a standard dense model from the saved low-bit artifact before inference, so task-accuracy comparisons are valid but runtime numbers are not equivalent to specialized low-bit kernels such as GPTQ/AWQ runtimes.
+Cleanup happens only when all of the following are true:
+
+- the evaluated variant is quantized
+- every enabled benchmark in the config was selected
+- every selected benchmark finished successfully
+- the run was not limited with `--benchmark-limit`
+
+When cleanup runs, the repo deletes only `models/quantized/<model>/<quantizer>/`.
+Raw snapshots under `models/raw/` are preserved.
+
+## Quantization Notes
+
+The manual quantizers are educational and reloadable, not kernel-optimized.
+
+- [model_quantizer/quantization/int8.py](/mnt/c/Users/aljac/Desktop/Model-Quantizer/model_quantizer/quantization/int8.py:39) implements symmetric int8 weight-only quantization with per-tensor and per-channel scaling.
+- [model_quantizer/quantization/int4.py](/mnt/c/Users/aljac/Desktop/Model-Quantizer/model_quantizer/quantization/int4.py:40) implements grouped symmetric int4 quantization with packed 4-bit storage.
+- [model_quantizer/artifacts/loader.py](/mnt/c/Users/aljac/Desktop/Model-Quantizer/model_quantizer/artifacts/loader.py:107) reconstructs a dense Transformers model from the saved low-bit artifact for evaluation.
+
+Because the loader dequantizes back into a standard dense model, benchmark accuracy comparisons are valid, but runtime is not representative of specialized low-bit serving stacks such as GPTQ or AWQ runtimes.
+
+## Docker and Vast.ai
+
+The repo includes:
+
+- [Dockerfile](/mnt/c/Users/aljac/Desktop/Model-Quantizer/Dockerfile:1)
+- [.dockerignore](/mnt/c/Users/aljac/Desktop/Model-Quantizer/.dockerignore:1)
+- [docker/run_pipeline_and_benchmarks.sh](/mnt/c/Users/aljac/Desktop/Model-Quantizer/docker/run_pipeline_and_benchmarks.sh:1)
+
+Build the image:
+
+```bash
+docker build -t model-quantizer .
+```
+
+Run a batch job locally or on Vast.ai:
+
+```bash
+docker run --gpus all --rm \
+  -e HF_TOKEN=your_token_here \
+  -e MQ_MODELS="phi-3 mistral-7b" \
+  -e MQ_QUANTIZERS="int8_per_tensor int4_grouped" \
+  -e MQ_BENCHMARKS="hellaswag mmlu" \
+  -e MQ_DEVICE="cuda:0" \
+  -v "$(pwd)/models:/workspace/app/models" \
+  -v "$(pwd)/artifacts:/workspace/app/artifacts" \
+  -v "$(pwd)/logs:/workspace/app/logs" \
+  model-quantizer
+```
+
+Useful container environment variables:
+
+- `MQ_CONFIG` defaults to `config/default.yaml`
+- `MQ_MODELS` space-separated model aliases
+- `MQ_QUANTIZERS` space-separated quantizer aliases
+- `MQ_BENCHMARKS` optional space-separated benchmark names
+- `MQ_DEVICE` defaults to `auto`
+- `MQ_ALL_MODELS` defaults to `0`
+- `MQ_ALL_QUANTIZERS` defaults to `0`
+- `MQ_BENCHMARK_LIMIT` optional smoke-test limit
+- `MQ_NO_RAW_BASELINE=1` to skip raw baselines
+
+For Vast.ai, use the same image and pass the environment variables in the instance template or startup command. Mount persistent storage for `models/`, `artifacts/`, and `logs/` so downloads and benchmark results survive instance restarts.
